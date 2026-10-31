@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'node:net'
-import { herdrOpenCommand, LINUX_LAUNCH, LINUX_OPEN, tmuxOpenCommand } from '../hooks/open'
+import { CLIENT_FIND, clientOpenCommand, herdrOpenCommand, LINUX_LAUNCH, LINUX_OPEN, tmuxOpenCommand } from '../hooks/open'
 
 const dir = mkdtempSync(join(tmpdir(), 'pane-open-'))
 const bin = join(dir, 'bin')
@@ -106,6 +106,42 @@ if [ "$3" = --remote-expr ]; then printf '/test/tmux,1,0 %%1\\n'; fi
   }
   assert.ok(!existsSync(join(dir, 'nope')) && !existsSync(join(dir, 'nope2')), 'a file name ran as a command')
   console.log(`Herdr checks passed in ${shells.join(', ')}: the file name reaches the editor verbatim and nothing in it runs`)
+  const home = join(dir, 'client home')
+  const client = join(dir, 'client-bin')
+  mkdirSync(home)
+  mkdirSync(client)
+  writeFileSync(join(client, 'ssh'), '#!/bin/sh\nshift 4\n[ "$1" = -- ] && shift\nshift\nexec sh -c "$1"\n', { mode: 0o700 })
+  writeFileSync(join(client, 'uname'), '#!/bin/sh\necho Darwin\n', { mode: 0o700 })
+  writeFileSync(join(client, 'open'), `#!/bin/sh\nprintf '%s\\0' "$@" >'${join(dir, 'opened')}'\n`, { mode: 0o700 })
+  const source = join(dir, "A & B it's $(touch nope3).md")
+  writeFileSync(source, 'hello from the server\n')
+  const send = clientOpenCommand('me@mac', source)
+  const sent = spawnSync(send.argv[0]!, send.argv.slice(1), { encoding: 'utf8', cwd: dir, env: { ...process.env, HOME: home, PATH: `${client}:${process.env.PATH}` }, timeout: 5000 })
+  assert.equal(sent.status, 0, sent.stderr)
+  const [dashes, copy] = readFileSync(join(dir, 'opened'), 'utf8').split('\0')
+  assert.equal(dashes, '--')
+  assert.equal(readFileSync(copy!, 'utf8'), 'hello from the server\n')
+  assert.equal(copy!.split('/').pop(), source.split('/').pop())
+  assert.ok(copy!.startsWith(join(home, '.cache/filetree-open/')), copy)
+  assert.ok(!existsSync(join(dir, 'nope3')), 'a file name ran as a command on the client')
+  const find = (env: Record<string, string>) => spawnSync('/bin/sh', ['-c', CLIENT_FIND], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', ...env }, timeout: 5000 }).stdout.trim()
+  assert.equal(find({ SSH_CONNECTION: '100.1.2.3 5 100.4.5.6 22' }), '100.1.2.3')
+  assert.equal(find({}), '')
+  if (process.platform === 'linux') {
+    const fake = join(dir, 'herdr')
+    copyFileSync('/bin/sh', fake)
+    writeFileSync(join(dir, 'server'), 'sleep 30\n:\n')
+    const attached = spawn(fake, ['-c', 'sleep 30; :'], { env: { PATH: process.env.PATH, SSH_CONNECTION: '100.7.8.9 5 100.4.5.6 22' }, stdio: 'ignore' })
+    const server = spawn(fake, ['server'], { cwd: dir, env: { PATH: process.env.PATH, SSH_CONNECTION: '100.9.9.9 5 100.4.5.6 22' }, stdio: 'ignore' })
+    await new Promise(done => setTimeout(done, 300))
+    try {
+      assert.equal(find({ HERDR_ENV: '1', SSH_CONNECTION: '100.1.2.3 5 100.4.5.6 22' }), '100.7.8.9')
+    } finally {
+      attached.kill()
+      server.kill()
+    }
+  }
+  console.log('Client checks passed: odd names arrive verbatim, nothing runs, and the attached herdr client is found')
   console.log('Open checks passed; no applications launched')
 } finally {
   for (const socket of sockets) socket.close()

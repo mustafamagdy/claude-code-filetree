@@ -6,7 +6,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.306-D97757?logo=claude&logoColor=fff" alt="Claude Code 2.1.306 or newer">
-  <img src="https://img.shields.io/badge/version-0.5.3-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.4-blue" alt="Version">
   <img src="https://img.shields.io/badge/type-mod-6f42c1" alt="Claude Code mod">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
@@ -91,6 +91,10 @@ flowchart LR
 
 <img src="docs/media/multiplexer.gif" alt="Enter opens hoard.ts in nvim in a tmux pane to the right of Claude" width="800">
 
+### Open on your own computer
+
+With a file selected, the open button in the tree header opens it on the computer you are sitting at, not the machine Claude runs on. Over ssh it copies the file to `~/.cache/filetree-open` on your computer and opens it in the default app; edits to that copy stay there. This machine needs key-based ssh back to your computer. Without an ssh session the button uses this machine's default app.
+
 ### Keys
 
 With the tree focused:
@@ -128,6 +132,7 @@ Shortcut row:     auto | always | off
 Open with:        empty | editor | preview | a command with {path} and {dir}
 Binary files:     Open with | default app
 Edit with:        empty | a command with {path} and {line}
+Open on:          empty | an ssh target such as me@laptop
 Diff with:        empty | a command such as "hunk diff --" or "lazygit -f"
 Terminal target:  auto | pane right | pane below | tab | workspace
 Ignore:           names to hide, such as ".cache .tmp"
