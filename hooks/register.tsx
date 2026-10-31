@@ -1,5 +1,5 @@
 import { type EngineInterface, type HookStream, type ProcessSpawnResult, type Register, type RenderElement, type RenderSurface, type Timer, update } from 'claude-code'
-import { herdrError, herdrOpenCommand, herdrPane, isBinaryPath, LINUX_LAUNCH, openCommand, openWithCommand, type Target, terminalTarget, tmuxCommand, tmuxOpenCommand, words } from './open'
+import { clientFindCommand, clientOpenCommand, herdrError, herdrOpenCommand, herdrPane, isBinaryPath, LINUX_LAUNCH, openCommand, openWithCommand, type Target, terminalTarget, tmuxCommand, tmuxOpenCommand, words } from './open'
 import type { ButtonProps } from './button'
 import { CACHE_KEEP, cacheName, CLEAN, coderFor, EXIT_FAILED, EXIT_LOCKED, EXIT_MISSING, fitCells, PNG_DIRECT_BYTES, PNG_DIRECT_PIXELS, pictureKind, pngSize, POLICY, POSTER } from './peek'
 
@@ -86,10 +86,11 @@ let generation = 0
 let lastPress = { key: '', at: 0 }
 let noNerd = false
 let glyphSetting = 'auto'
-const WORDS: Record<string, string> = { up: 'up', cwd: 'cwd', refresh: 'sync', hidden: 'dots', size: 'size', collapse: 'fold', split: 'split', unselect: 'clear' }
+const WORDS: Record<string, string> = { up: 'up', cwd: 'cwd', refresh: 'sync', hidden: 'dots', size: 'size', collapse: 'fold', split: 'split', unselect: 'clear', open: 'open' }
 let openWithSetting = ''
 let binariesInDefaultApp = false
 let editWithSetting = ''
+let clientSetting = ''
 let diffWithSetting = ''
 let targetSetting: Target = 'auto'
 let palette: Palette = parsePalette('')
@@ -1702,6 +1703,22 @@ async function openFile($: EngineInterface, path: string, how: { mode?: string; 
   }
 }
 
+async function openOnClient($: EngineInterface, path: string): Promise<void> {
+  const name = path.slice(path.lastIndexOf('/') + 1)
+  try {
+    const os = await osName($)
+    const find = clientFindCommand()
+    const client = clientSetting || (os === 'win32' ? '' : (await $.process.run(find.argv, find.init)).stdout.trim())
+    if (!client) return await openFile($, path, { mode: '' })
+    const { argv, init } = clientOpenCommand(client, path)
+    const run = await $.process.run(argv, init)
+    if (run.exitCode === 0) $.ui.toast(`opened ${name} on ${run.stdout.trim() || client}`)
+    else $.ui.toast(`could not open ${name} on ${client}: ${run.stderr.trim().split('\n')[0] || `exit ${run.exitCode}`}. Set Open on in /config if this is the wrong machine or user.`)
+  } catch {
+    $.ui.toast(`could not open ${name} on this computer`)
+  }
+}
+
 async function editorHost($: EngineInterface, os: 'linux' | 'darwin' | 'win32'): Promise<'tmux' | 'herdr' | ''> {
   if (os === 'win32') return ''
   if (await $.env.get('TMUX')) return 'tmux'
@@ -1843,6 +1860,10 @@ async function pressHeader($: EngineInterface, id: string): Promise<void> {
   else if (id === 'collapse') await patch($, cur => ({ expanded: [], nodes: dropBelow(cur.nodes, cur.nodes.filter(x => x.parent === cur.root && x.kind === 'dir').map(x => x.id)) }))
   else if (id === 'unselect') await patch($, () => ({ selected: '', cursor: '' }))
   else if (id === 'external' && t.preview) await openFile($, t.preview, { mode: '' })
+  else if (id === 'open') {
+    const n = t.nodes.find(x => x.id === t.selected)
+    if (n && n.kind !== 'dir') await openOnClient($, n.id)
+  }
   else if (id === 'split') await toggleSplit($)
 }
 
@@ -1872,6 +1893,7 @@ export const register: Register = (on, options) => {
   openWithSetting = typeof options?.open === 'string' ? options.open : ''
   binariesInDefaultApp = options?.binaries === 'default app'
   editWithSetting = typeof options?.edit === 'string' ? options.edit.trim() : ''
+  clientSetting = typeof options?.client === 'string' ? options.client.trim() : ''
   palette = parsePalette(options?.palette)
   diffWithSetting = typeof options?.diff === 'string' ? options.diff.trim() : ''
   targetSetting = terminalTarget(options?.target)
@@ -2276,7 +2298,9 @@ export const register: Register = (on, options) => {
       return out
     }
     const rootCounts = t.top ? countSegs(t.counts[t.root]) : []
+    const selectedNode = t.nodes.find(n => n.id === t.selected)
     const plainButtons = [
+      ...(selectedNode && selectedNode.kind !== 'dir' ? [{ id: 'open', label: unicode ? '↗' : '\u{eb14}', dim: false, hint: 'open on this computer' }] : []),
       ...(t.selected ? [{ id: 'unselect', label: unicode ? '⊘' : '\u{eabd}', dim: false, hint: 'clear selection' }] : []),
       { id: 'up', label: unicode ? '△' : '\u{ebff}', dim: true, hint: 'parent folder' },
       { id: 'cwd', label: unicode ? '◎' : '\u{eb06}', dim: !follow, hint: 'follow the cwd' },

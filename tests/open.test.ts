@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { herdrError, herdrOpenCommand, herdrPane, openCommand, openWithCommand, tmuxOpenCommand, TMUX_OPEN } from '../hooks/open'
+import { CLIENT_OPEN, clientOpenCommand, herdrError, herdrOpenCommand, herdrPane, openCommand, openWithCommand, tmuxOpenCommand, TMUX_OPEN } from '../hooks/open'
 
 test('inside tmux, open hands the file to the tmux opener with the editor and its folder', () => {
   const { argv } = tmuxOpenCommand('nvim', '/work/A & B/dax.ts')
@@ -73,4 +73,12 @@ test('herdr replies: the pane id comes from the split JSON and a failure message
   expect(herdrError('{"error":{"code":"pane_not_found","message":"pane w1:p35 not found"},"id":"cli:pane:split"}\n')).toBe('pane w1:p35 not found')
   expect(herdrError('error: unexpected argument\nUsage: herdr pane split')).toBe('error: unexpected argument')
   expect(herdrError('')).toBe('')
+})
+
+test('open on client: odd names stay one quoted word and the file goes in on stdin', () => {
+  const { argv } = clientOpenCommand('mac', "/work/A & B/it's $(x).md")
+  expect(argv.slice(4, 5)).toEqual(['mac'])
+  expect(argv.at(-1)).toBe("/work/A & B/it's $(x).md")
+  expect(argv.at(-2)).toEndWith(`sh '_work_A_B' 'it'\\''s $(x).md'`)
+  expect(argv.at(-2)).toContain(CLIENT_OPEN.split('\n')[0])
 })

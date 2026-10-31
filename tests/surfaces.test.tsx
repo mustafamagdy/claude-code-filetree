@@ -3,7 +3,7 @@ import type { CommandRunInput, On, RenderPropsOf, ToolCallInput, ToolCallResult,
 import type { RowSpec, RowsProps, Seg } from '../hooks/rows'
 import type { ZoneProps } from '../hooks/zone'
 
-import { LINUX_LAUNCH, TMUX_OPEN, TMUX_WORKSPACE } from '../hooks/open'
+import { CLIENT_FIND, clientOpenCommand, LINUX_LAUNCH, TMUX_OPEN, TMUX_WORKSPACE } from '../hooks/open'
 import { CLEAN, POLICY, POSTER } from '../hooks/peek'
 import { age, ancestorsOf, formatSize, replaceChildren, toNodes } from '../hooks/tree'
 
@@ -1062,6 +1062,43 @@ test('open with: a double-click and Enter run the configured command instead of 
   await ui.post({ key: 'return' }, { in: 'rows' })
   await clock.settle()
   expect(ran).toContainEqual(['glow', '-p', `${root}/c.md`, '--dir', root])
+  await ui.unmount()
+})
+
+test('open button: shows only for a selected file and sends it to the attached ssh client', { timeoutMs: 20_000 }, async ($, on) => {
+  const ran: Ran = []
+  const root = '/home/k/proj'
+  const clock = world(on, { os: 'linux', env: { HOME: '/home/k', HERDR_ENV: '1' }, cwd: root, top: '', dirs: { [root]: [['docs', 'dir'], ['README.md', 'file']], [`${root}/docs`]: [] }, status: '', numstat: '', stdout: { [`sh -c ${CLIENT_FIND}`]: '100.67.49.108\n' } }, ran)
+  await $.session.start({ cwd: root, surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const ui = await $.ui.mount({ plugin: 'filetree', surface: 'terminal', component: 'Pane', requestId: 'filetree', props: paneProps(60) })
+  await clock.settle()
+  expect(await texts(ui)).not.toContain('button-open')
+  await ui.post({ press: `${root}/docs` }, { in: 'rows' })
+  await clock.settle()
+  expect(await texts(ui)).not.toContain('button-open')
+  await ui.post({ press: `${root}/README.md` }, { in: 'rows' })
+  await clock.settle()
+  expect(await texts(ui)).toContain('button-open')
+  await ui.press({ key: 'open' })
+  await clock.settle()
+  expect(ran).toContainEqual(clientOpenCommand('100.67.49.108', `${root}/README.md`).argv)
+  expect(ran.some(a => a[0] === 'toast' && (a[1] ?? '').startsWith('opened README.md on '))).toBe(true)
+  await ui.unmount()
+})
+
+test('open button: without an ssh client it uses the default app here, and Open on overrides detection', { timeoutMs: 20_000, options: { client: 'me@laptop' } }, async ($, on) => {
+  const ran: Ran = []
+  const root = '/home/k/proj'
+  const clock = world(on, { os: 'linux', env: { HOME: '/home/k' }, cwd: root, top: '', dirs: { [root]: [['a.md', 'file']] }, status: '', numstat: '', stdout: { [`sh -c ${CLIENT_FIND}`]: '' } }, ran)
+  await $.session.start({ cwd: root, surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const ui = await $.ui.mount({ plugin: 'filetree', surface: 'terminal', component: 'Pane', requestId: 'filetree', props: paneProps(60) })
+  await ui.post({ press: `${root}/a.md` }, { in: 'rows' })
+  await clock.settle()
+  await ui.press({ key: 'open' })
+  await clock.settle()
+  expect(ran).toContainEqual(clientOpenCommand('me@laptop', `${root}/a.md`).argv)
   await ui.unmount()
 })
 

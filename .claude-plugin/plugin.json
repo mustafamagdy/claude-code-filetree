@@ -1,6 +1,6 @@
 {
   "name": "filetree",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "An IDE-style file tree for Claude Code that shows what Claude is doing and where in files",
   "types": "./types/index.d.ts",
   "author": {
@@ -105,6 +105,12 @@
       "type": "string",
       "title": "Open with",
       "description": "What a double-click or Enter does with a file. Empty: the default app, also inside tmux. editor: use $VISUAL, then $EDITOR, then vi in tmux or a herdr pane (Linux/macOS only; otherwise shows a notice). preview: show it in the pane (left goes back; ↗ always opens the default app). Anything else is a command run instead: {path} is the file and {dir} its folder; without {path} the path goes last. Words split on spaces, quotes keep a word whole, and no shell runs it. It should start the viewer and return; on Linux it runs detached.",
+      "default": ""
+    },
+    "client": {
+      "type": "string",
+      "title": "Open on",
+      "description": "Where the open button in the tree header sends the selected file. Empty: the computer you connected from over ssh, found from the attached tmux or herdr client or from SSH_CONNECTION, or this machine when there is none. Anything else is an ssh target such as me@laptop. The file is copied to ~/.cache/filetree-open there, so edits to the copy stay there. This machine needs key-based ssh to that computer.",
       "default": ""
     },
     "binaries": {

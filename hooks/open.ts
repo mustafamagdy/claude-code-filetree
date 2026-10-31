@@ -139,6 +139,47 @@ export function openCommand(os: 'linux' | 'darwin' | 'win32', target: string) {
   }
 }
 
+// tmux and herdr outlive the ssh session that attached them, so the panes' SSH_CONNECTION is stale or absent:
+// the attached client process holds the live one. The newest client wins when several are attached.
+export const CLIENT_FIND = [
+  'peer() { tr \'\\0\' \'\\n\' <"/proc/$1/environ" 2>/dev/null | sed -n \'s/^SSH_CONNECTION=\\([^ ]*\\) .*/\\1/p\' | head -n 1; }',
+  'if [ -n "$TMUX" ]; then peer "$(tmux display-message -p \'#{client_pid}\')"; exit 0; fi',
+  'if [ -n "$HERDR_ENV" ]; then',
+  '  for pid in $(ps -u "$(id -u)" -o pid=,comm=,args= --sort=-start_time 2>/dev/null | awk \'$2 == "herdr" && $4 != "server" { print $1 }\'); do',
+  '    p=$(peer "$pid")',
+  '    if [ -n "$p" ]; then echo "$p"; exit 0; fi',
+  '  done',
+  '  exit 0',
+  'fi',
+  'echo "${SSH_CONNECTION%% *}"',
+].join('\n')
+
+// Runs on the client: the file arrives on stdin and is kept per source folder, so reopening replaces the last copy
+export const CLIENT_OPEN = [
+  'd=$HOME/.cache/filetree-open/$1 f=$HOME/.cache/filetree-open/$1/$2',
+  'mkdir -p "$d" && cat >"$f.part" && mv -f "$f.part" "$f" || exit 1',
+  'case $(uname) in',
+  '  Darwin) open -- "$f" 2>/dev/null || open -t -- "$f" || exit 1 ;;',
+  '  *) xdg-open "$f" >/dev/null 2>&1 || exit 1 ;;',
+  'esac',
+  'hostname -s 2>/dev/null || hostname',
+].join('\n')
+
+const SSH_SEND = 'exec ssh -o BatchMode=yes -o ConnectTimeout=5 -- "$1" "$2" <"$3"'
+
+const quoted = (word: string) => `'${word.replace(/'/g, "'\\''")}'`
+
+export function clientFindCommand() {
+  return { argv: ['sh', '-c', CLIENT_FIND], init: { timeoutMs: 5_000 } }
+}
+
+export function clientOpenCommand(client: string, target: string) {
+  const cut = target.lastIndexOf('/')
+  const folder = target.slice(0, cut).replace(/[^\w.-]+/g, '_').slice(-100) || '_'
+  const remote = ['sh', '-c', quoted(CLIENT_OPEN), 'sh', quoted(folder), quoted(target.slice(cut + 1))].join(' ')
+  return { argv: ['sh', '-c', SSH_SEND, 'sh', client, remote, target], init: { timeoutMs: 120_000 } }
+}
+
 export function words(command: string): string[] {
   const out: string[] = []
   let word: string | null = null
